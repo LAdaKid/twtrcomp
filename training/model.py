@@ -17,7 +17,11 @@ from keras.preprocessing.sequence import pad_sequences
 from keras import models
 from keras.callbacks import ReduceLROnPlateau, EarlyStopping
 from keras.layers import Dense, Dropout, Embedding, LSTM
+# TensorFlow for google cloud
+import tensorflow as tf
+from tensorflow.python.lib.io import file_io
 
+# import sub-packages
 from clean_tweets import clean_tweets
 
 
@@ -163,67 +167,84 @@ def save_model(model, w2v_model, tokenizer):
     """
     # Save model
     model.save(KERAS_MODEL)
-    w2v_model.save(WORD2VEC_MODEL)
-    pickle.dump(tokenizer, open(TOKENIZER_MODEL, "wb"), protocol=0)
+    with file_io.FileIO(KERAS_MODEL, mode='r') as input_f:
+        with file_io.FileIO(job_dir + 'model/model.h5', mode='w+') as output_f:
+            output_f.write(input_f.read())
+    #w2v_model.save(WORD2VEC_MODEL)
+    #pickle.dump(tokenizer, open(TOKENIZER_MODEL, "wb"), protocol=0)
     #pickle.dump(encoder, open(ENCODER_MODEL, "wb"), protocol=0)
 
 
-def main(filepath, build, load, score, predict):
-    # Read in data
-    data = clean_tweets(filepath)
-    # Filter to 1000 for testing
-    #data = data.loc[:1000]
-    # If scoring model, split data set
-    if score:
-        training_set, test_set = split_data(data)
-    else:
-        training_set = data
-    # Build vocab vector model
-    w2v_model = build_vocab_vector(training_set)
-    # Build tokenizer and get vocab size
-    tokenizer, vocab_size = build_tokenizer(training_set)
-    # Tokenize text
-    x_train, y_train = tokenize_text(tokenizer, training_set)
-    # Build model
-    if build:
-        model = build_model(w2v_model, tokenizer, vocab_size,
-                            x_train, y_train)
-        # Save model
-        save_model(model, w2v_model, tokenizer)
-    elif load:
-        # Add model loading
-        model = models.load_model(load)
-    else:
-        print('Select build or load model.')
-        sys.exit()
-    # Score model
-    if score:
-        x_test, y_test = tokenize_text(tokenizer, test_set)
-        score_model(model, x_test, y_test)
-    elif predict:
-        # Add prediction logic
-        # Predict
-        # model.predict([x_test])
-        pass
-    else:
-        print('Select score or predict.')
-        sys.exit()
+def main(job_dir, filepath, build, load, score, predict):
+
+    # Setting up the path for saving logs (google cloud)
+    logs_path = job_dir + 'logs/tensorboard'
+
+    # Using the GPU
+    with tf.device('/device:GPU:0'):
+        # Read in data
+        data = clean_tweets(filepath)
+        # Filter to 1000 for testing
+        #data = data.loc[:1000]
+        # If scoring model, split data set
+        if score:
+            training_set, test_set = split_data(data)
+        else:
+            training_set = data
+        # Build vocab vector model
+        w2v_model = build_vocab_vector(training_set)
+        # Build tokenizer and get vocab size
+        tokenizer, vocab_size = build_tokenizer(training_set)
+        # Tokenize text
+        x_train, y_train = tokenize_text(tokenizer, training_set)
+        # Build model
+        if build:
+            model = build_model(w2v_model, tokenizer, vocab_size,
+                                x_train, y_train)
+            # Save model
+            save_model(model, w2v_model, tokenizer)
+        elif load:
+            # Add model loading
+            model = models.load_model(load)
+        else:
+            print('Select build or load model.')
+            sys.exit()
+        # Score model
+        if score:
+            x_test, y_test = tokenize_text(tokenizer, test_set)
+            score_model(model, x_test, y_test)
+        elif predict:
+            # Add prediction logic
+            # Predict
+            # model.predict([x_test])
+            pass
+        else:
+            print('Select score or predict.')
+            sys.exit()
 
 
 if __name__ == '__main__':
     # Setup Argument Parser
     parser = argparse.ArgumentParser(description="Shoutout Jack Dorsey!")
-    parser.add_argument('-f', '--file-path', dest='filepath', action='store',
-                        default='Training.txt',
-                        help='Give file path for training data.')
-    parser.add_argument('-bm', '--build-model', dest='build', action='store_true',
-                        help='Build model and save as h5 file.')
-    parser.add_argument('-lm', '--load-model', dest='load', action='store',
-                        help='Load h5 keras model.')
-    parser.add_argument('-s', '--score', dest='score', action='store_true',
-                        help='Score the model')
-    parser.add_argument('-p', '--predict', dest='predict', action='store',
-                        help='Predict given path with the model')
+    # Add Input Arguments
+    parser.add_argument(
+        '--job-dir', dest='job_dir', action='store',
+        help='GCS location to write checkpoints and export models')
+    parser.add_argument(
+        '-f', '--file-path', dest='filepath', action='store',
+        default='Training.txt', help='Give file path for training data.')
+    parser.add_argument(
+        '-bm', '--build-model', dest='build', action='store_true',
+        help='Build model and save as h5 file.')
+    parser.add_argument(
+        '-lm', '--load-model', dest='load', action='store',
+        help='Load h5 keras model.')
+    parser.add_argument(
+        '-s', '--score', dest='score', action='store_true',
+        help='Score the model')
+    parser.add_argument(
+        '-p', '--predict', dest='predict', action='store',
+        help='Predict given path with the model')
     # Cast args to dict
     args = vars(parser.parse_args(sys.argv[1:]))
 
