@@ -3,7 +3,7 @@ import re
 # nltk
 import nltk
 from nltk.corpus import stopwords
-from  nltk.stem import SnowballStemmer
+from nltk.stem import SnowballStemmer
 
 # Setup global 
 
